@@ -40,11 +40,7 @@ def process(document_id, limit, dry_run, watch):
     logger = logging.getLogger(__name__)
 
     client = PaperlessClient(settings.paperless_url, settings.paperless_api_token)
-    classifier = Classifier(
-        model=settings.claude_model,
-        oauth_access_token=settings.claude_code_oauth_token,
-        oauth_refresh_token=settings.claude_code_oauth_refresh_token,
-    )
+    classifier = Classifier(model=settings.claude_model)
 
     try:
         if watch:
