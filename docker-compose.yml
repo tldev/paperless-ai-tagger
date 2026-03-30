@@ -1,0 +1,16 @@
+services:
+  paperless-ai-tagger:
+    image: ghcr.io/tldev/paperless-ai-tagger:latest
+    # build: .
+    environment:
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_API_TOKEN: your-api-token-here
+      CLAUDE_CODE_OAUTH_TOKEN: your-claude-oauth-token-here
+      CLAUDE_MODEL: sonnet
+      MODE: merge
+      POLL_INTERVAL: 300
+      BATCH_SIZE: 10
+      LOG_LEVEL: info
+      # DRY_RUN: true
+      # CUSTOM_PROMPT: "Additional classification instructions here"
+    restart: unless-stopped

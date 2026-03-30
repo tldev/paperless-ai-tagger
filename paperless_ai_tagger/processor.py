@@ -1,0 +1,216 @@
+import logging
+import time
+
+from paperless_ai_tagger.classifier import ClassificationError, Classifier
+from paperless_ai_tagger.client import PaperlessClient
+from paperless_ai_tagger.config import Settings
+from paperless_ai_tagger.models import Classification, Document
+
+logger = logging.getLogger(__name__)
+
+
+class ProcessingStats:
+    def __init__(self):
+        self.processed = 0
+        self.skipped = 0
+        self.failed = 0
+        self.tags_created = 0
+        self.correspondents_created = 0
+        self.types_created = 0
+
+
+def process_documents(
+    client: PaperlessClient,
+    classifier: Classifier,
+    settings: Settings,
+    document_id: int | None = None,
+    limit: int = 0,
+) -> ProcessingStats:
+    stats = ProcessingStats()
+    client.load_taxonomy()
+
+    processed_tag = client.ensure_tag(settings.processed_tag)
+    effective_limit = limit or settings.batch_size
+
+    if document_id:
+        documents = [client.get_document(document_id)]
+    else:
+        documents = client.get_unprocessed_documents(processed_tag.id, limit=effective_limit)
+
+    if not documents:
+        logger.info("No unprocessed documents found")
+        return stats
+
+    logger.info("Found %d document(s) to process", len(documents))
+
+    for i, doc in enumerate(documents):
+        if i > 0:
+            time.sleep(settings.batch_delay)
+
+        try:
+            _process_single(client, classifier, settings, doc, processed_tag.id, stats)
+        except ClassificationError as e:
+            logger.error("Failed to classify document #%d: %s", doc.id, e)
+            stats.failed += 1
+        except Exception as e:
+            logger.error("Unexpected error processing document #%d: %s", doc.id, e)
+            stats.failed += 1
+
+    logger.info(
+        "Complete. Processed %d, skipped %d, failed %d. "
+        "Created %d new tags, %d new correspondents, %d new document types.",
+        stats.processed,
+        stats.skipped,
+        stats.failed,
+        stats.tags_created,
+        stats.correspondents_created,
+        stats.types_created,
+    )
+    return stats
+
+
+def _process_single(
+    client: PaperlessClient,
+    classifier: Classifier,
+    settings: Settings,
+    doc: Document,
+    processed_tag_id: int,
+    stats: ProcessingStats,
+):
+    if processed_tag_id in doc.tags and not settings.dry_run:
+        logger.info("Skipping document #%d: already processed", doc.id)
+        stats.skipped += 1
+        return
+
+    logger.info('Processing document #%d: "%s"', doc.id, doc.title)
+
+    if not doc.content.strip():
+        logger.warning("Document #%d has no OCR content, skipping", doc.id)
+        stats.skipped += 1
+        return
+
+    classification = classifier.classify(
+        content=doc.content,
+        tags=list(client.tags.keys()),
+        correspondents=list(client.correspondents.keys()),
+        document_types=list(client.document_types.keys()),
+        custom_prompt=settings.custom_prompt,
+        max_content_length=settings.max_content_length,
+    )
+
+    logger.info(
+        "Classified: title=%r tags=%s correspondent=%r type=%r confidence=%s",
+        classification.title,
+        classification.tags,
+        classification.correspondent,
+        classification.document_type,
+        classification.confidence,
+    )
+    logger.debug("Reasoning: %s", classification.reasoning)
+
+    if settings.dry_run:
+        _log_dry_run(doc, classification, settings)
+        stats.processed += 1
+        return
+
+    payload, tag_ids = _build_update_payload(
+        client, doc, classification, processed_tag_id, settings, stats
+    )
+
+    if payload:
+        client.update_document(doc.id, payload)
+        changes = _summarize_changes(payload, tag_ids, processed_tag_id)
+        logger.info("Updated document #%d: %s", doc.id, changes)
+    else:
+        logger.info("Document #%d: no changes needed", doc.id)
+
+    stats.processed += 1
+
+
+def _build_update_payload(
+    client: PaperlessClient,
+    doc: Document,
+    classification: Classification,
+    processed_tag_id: int,
+    settings: Settings,
+    stats: ProcessingStats,
+) -> tuple[dict, list[int]]:
+    payload: dict = {}
+    tag_ids: list[int] = []
+
+    if settings.classify_tags and classification.tags:
+        existing_tags = set(doc.tags)
+        new_tag_ids = set()
+        for tag_name in classification.tags:
+            tag = client.ensure_tag(tag_name)
+            if tag.id not in existing_tags:
+                stats.tags_created += int(tag.name.lower() not in client.tags)
+            new_tag_ids.add(tag.id)
+        if settings.mode == "merge":
+            tag_ids = list(existing_tags | new_tag_ids | {processed_tag_id})
+        else:
+            tag_ids = list(new_tag_ids | {processed_tag_id})
+        payload["tags"] = tag_ids
+    else:
+        payload["tags"] = list(set(doc.tags) | {processed_tag_id})
+        tag_ids = payload["tags"]
+
+    if settings.classify_title and classification.title:
+        if settings.mode == "overwrite" or _is_autogenerated_title(doc.title):
+            payload["title"] = classification.title
+
+    if settings.classify_correspondent and classification.correspondent:
+        if settings.mode == "overwrite" or doc.correspondent is None:
+            corr = client.ensure_correspondent(classification.correspondent)
+            if corr.name.lower() not in {c.name.lower() for c in client.correspondents.values()}:
+                stats.correspondents_created += 1
+            payload["correspondent"] = corr.id
+
+    if settings.classify_document_type and classification.document_type:
+        if settings.mode == "overwrite" or doc.document_type is None:
+            dt = client.ensure_document_type(classification.document_type)
+            if dt.name.lower() not in {d.name.lower() for d in client.document_types.values()}:
+                stats.types_created += 1
+            payload["document_type"] = dt.id
+
+    return payload, tag_ids
+
+
+def _is_autogenerated_title(title: str) -> bool:
+    lower = title.lower()
+    autogen_patterns = [".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", "scan_", "img_"]
+    return any(p in lower for p in autogen_patterns) or not title.strip()
+
+
+def _log_dry_run(doc: Document, classification: Classification, settings: Settings):
+    changes = []
+    if settings.classify_title and classification.title:
+        if settings.mode == "overwrite" or _is_autogenerated_title(doc.title):
+            changes.append(f"title: {doc.title!r} -> {classification.title!r}")
+    if settings.classify_tags and classification.tags:
+        changes.append(f"tags: +{classification.tags}")
+    if settings.classify_correspondent and classification.correspondent:
+        if settings.mode == "overwrite" or doc.correspondent is None:
+            changes.append(f"correspondent: -> {classification.correspondent!r}")
+    if settings.classify_document_type and classification.document_type:
+        if settings.mode == "overwrite" or doc.document_type is None:
+            changes.append(f"document_type: -> {classification.document_type!r}")
+    if changes:
+        logger.info("[DRY RUN] Document #%d would change: %s", doc.id, "; ".join(changes))
+    else:
+        logger.info("[DRY RUN] Document #%d: no changes needed", doc.id)
+
+
+def _summarize_changes(payload: dict, tag_ids: list[int], processed_tag_id: int) -> str:
+    parts = []
+    if "title" in payload:
+        parts.append("title changed")
+    added_tags = len([t for t in tag_ids if t != processed_tag_id])
+    if added_tags:
+        parts.append(f"{added_tags} tags set")
+    if "correspondent" in payload:
+        parts.append("correspondent set")
+    if "document_type" in payload:
+        parts.append("type set")
+    parts.append("marked as processed")
+    return ", ".join(parts)
