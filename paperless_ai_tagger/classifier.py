@@ -97,8 +97,9 @@ class Classifier:
             )
 
         # The --output-format json wraps the result in an envelope.
-        # The actual classification is in the "result" field.
-        raw = envelope.get("result", result.stdout)
+        # With --json-schema, the classification is in "structured_output".
+        # Without it, it's in "result".
+        raw = envelope.get("structured_output") or envelope.get("result", result.stdout)
         logger.debug("Raw classification result: %s", raw[:2000] if isinstance(raw, str) else raw)
         if isinstance(raw, str):
             data = _parse_json_response(raw)
