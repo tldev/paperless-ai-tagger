@@ -22,8 +22,5 @@ RUN pip install --no-cache-dir .
 # Ensure HOME is set and writable (for Claude CLI credential files)
 ENV HOME=/root
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["paperless-ai-tagger", "process", "--watch"]
+ENTRYPOINT ["paperless-ai-tagger"]
+CMD ["process", "--watch"]
