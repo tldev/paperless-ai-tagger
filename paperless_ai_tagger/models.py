@@ -27,6 +27,7 @@ class Document:
     tags: list[int] = field(default_factory=list)
     correspondent: int | None = None
     document_type: int | None = None
+    original_file_name: str = ""
 
 
 @dataclass

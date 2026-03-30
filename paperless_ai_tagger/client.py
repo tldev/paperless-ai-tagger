@@ -121,6 +121,7 @@ class PaperlessClient:
                 tags=doc.get("tags", []),
                 correspondent=doc.get("correspondent"),
                 document_type=doc.get("document_type"),
+                original_file_name=doc.get("original_file_name", ""),
             )
             for doc in results
         ]
@@ -136,6 +137,7 @@ class PaperlessClient:
             tags=doc.get("tags", []),
             correspondent=doc.get("correspondent"),
             document_type=doc.get("document_type"),
+            original_file_name=doc.get("original_file_name", ""),
         )
 
     def update_document(self, document_id: int, payload: dict):

@@ -111,6 +111,12 @@ paperless-ai-tagger list-types
 
 **Merge** (default): New tags are added alongside existing ones. Title, correspondent, and document type are only set if currently empty (or the title looks auto-generated).
 
+In merge mode, a title is considered auto-generated if it matches any of these conditions:
+- Contains a file extension (`.pdf`, `.jpg`, `.tiff`, etc.)
+- Starts with a scanner/camera prefix (`scan_`, `Scan `, `IMG_`)
+- Is a generic placeholder (`document`, `untitled`, `attachment`, `download`)
+- Matches the original filename from Paperless (with or without extension, ignoring case and separator differences)
+
 **Overwrite**: All classified fields are replaced with the AI's suggestion. Existing tags are replaced, not merged.
 
 ## Development
