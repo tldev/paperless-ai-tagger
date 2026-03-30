@@ -1,10 +1,12 @@
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 
 from paperless_ai_tagger.models import Classification
+from paperless_ai_tagger.oauth import ensure_fresh_token
 from paperless_ai_tagger.prompt import CLASSIFICATION_SCHEMA, build_prompt
 
 logger = logging.getLogger(__name__)
@@ -15,8 +17,15 @@ class ClassificationError(Exception):
 
 
 class Classifier:
-    def __init__(self, model: str = "sonnet"):
+    def __init__(
+        self,
+        model: str = "sonnet",
+        oauth_access_token: str | None = None,
+        oauth_refresh_token: str | None = None,
+    ):
         self.model = model
+        self.oauth_access_token = oauth_access_token
+        self.oauth_refresh_token = oauth_refresh_token
         self._verify_claude_cli()
 
     def _verify_claude_cli(self):
@@ -62,6 +71,15 @@ class Classifier:
 
         logger.debug("Running claude CLI with model=%s", self.model)
 
+        # Build subprocess environment with fresh OAuth token if configured
+        env = None
+        if self.oauth_refresh_token:
+            access_token = self.oauth_access_token or os.environ.get(
+                "CLAUDE_CODE_OAUTH_TOKEN", ""
+            )
+            fresh_token = ensure_fresh_token(access_token, self.oauth_refresh_token)
+            env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": fresh_token}
+
         try:
             result = subprocess.run(
                 cmd,
@@ -69,6 +87,7 @@ class Classifier:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                env=env,
             )
         except subprocess.TimeoutExpired:
             raise ClassificationError("claude CLI timed out after 120 seconds")
