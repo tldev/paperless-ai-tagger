@@ -4,12 +4,16 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 from paperless_ai_tagger.models import Classification
 from paperless_ai_tagger.oauth import ensure_fresh_token
 from paperless_ai_tagger.prompt import CLASSIFICATION_SCHEMA, build_prompt
 
 logger = logging.getLogger(__name__)
+
+# Path where the entrypoint provisions Claude CLI credentials
+_CREDENTIALS_FILE = Path.home() / ".claude" / ".credentials.json"
 
 
 class ClassificationError(Exception):
@@ -26,6 +30,12 @@ class Classifier:
         self.model = model
         self.oauth_access_token = oauth_access_token
         self.oauth_refresh_token = oauth_refresh_token
+        self._use_credentials_file = _CREDENTIALS_FILE.exists()
+        if self._use_credentials_file:
+            logger.info(
+                "Claude CLI credentials file found at %s; CLI will handle token refresh",
+                _CREDENTIALS_FILE,
+            )
         self._verify_claude_cli()
 
     def _verify_claude_cli(self):
@@ -71,9 +81,13 @@ class Classifier:
 
         logger.debug("Running claude CLI with model=%s", self.model)
 
-        # Build subprocess environment with fresh OAuth token if configured
+        # Build subprocess environment with OAuth token if configured.
+        # When a credentials file exists (provisioned by entrypoint.sh), the CLI
+        # handles its own token refresh -- no need to set the env var.
         env = None
-        if self.oauth_refresh_token:
+        if self._use_credentials_file:
+            logger.debug("Using CLI credentials file for auth (token refresh handled by CLI)")
+        elif self.oauth_refresh_token:
             access_token = self.oauth_access_token or os.environ.get(
                 "CLAUDE_CODE_OAUTH_TOKEN", ""
             )

@@ -5,7 +5,11 @@ services:
     environment:
       PAPERLESS_URL: http://paperless:8000
       PAPERLESS_API_TOKEN: your-api-token-here
-      CLAUDE_CODE_OAUTH_TOKEN: your-claude-oauth-token-here
+      # Preferred: Claude CLI credential file auth (auto token refresh)
+      CLAUDE_OAUTH_ACCESS_TOKEN: your-access-token-here
+      CLAUDE_OAUTH_REFRESH_TOKEN: your-refresh-token-here
+      # Legacy: direct env var auth (no auto refresh)
+      # CLAUDE_CODE_OAUTH_TOKEN: your-claude-oauth-token-here
       CLAUDE_MODEL: sonnet
       MODE: merge
       POLL_INTERVAL: 300
