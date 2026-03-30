@@ -17,6 +17,7 @@ Rules:
 - Tags should be lowercase and use hyphens (e.g. "tax-return", "medical-bill")
 - Title should be human-readable and specific (include dates, amounts, names when relevant)
 - If the document is too unclear to classify confidently, set confidence to "low"
+- Respond with ONLY a JSON object. No markdown, no explanation, no code fences.
 {custom_prompt}
 Document OCR text:
 ---

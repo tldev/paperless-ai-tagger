@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import shutil
 import subprocess
 
@@ -54,6 +55,8 @@ class Classifier:
             schema_json,
             "--model",
             self.model,
+            "--max-turns",
+            "1",
             "--no-session-persistence",
         ]
 
@@ -86,10 +89,7 @@ class Classifier:
         # The actual classification is in the "result" field.
         raw = envelope.get("result", result.stdout)
         if isinstance(raw, str):
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                raise ClassificationError(f"Failed to parse classification JSON: {raw[:500]}")
+            data = _parse_json_response(raw)
         else:
             data = raw
 
@@ -101,3 +101,29 @@ class Classifier:
             confidence=data.get("confidence", "low"),
             reasoning=data.get("reasoning", ""),
         )
+
+
+def _parse_json_response(raw: str) -> dict:
+    # Try direct parse first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting JSON from markdown code fences
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding first { ... } block
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    raise ClassificationError(f"Failed to parse classification JSON: {raw[:500]}")
