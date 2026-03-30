@@ -56,7 +56,7 @@ class Classifier:
             "--model",
             self.model,
             "--max-turns",
-            "1",
+            "3",
             "--no-session-persistence",
         ]
 
@@ -87,6 +87,13 @@ class Classifier:
         except json.JSONDecodeError:
             raise ClassificationError(
                 f"Failed to parse claude CLI output as JSON: {result.stdout[:500]}"
+            )
+
+        # Check for max turns error
+        if envelope.get("subtype") == "error_max_turns":
+            raise ClassificationError(
+                "Claude CLI hit max turns limit before producing output. "
+                f"Cost: ${envelope.get('total_cost_usd', 0):.4f}"
             )
 
         # The --output-format json wraps the result in an envelope.
