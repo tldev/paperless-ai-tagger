@@ -108,6 +108,11 @@ def _process_single(
     )
     logger.debug("Reasoning: %s", classification.reasoning)
 
+    if not classification.title and not classification.tags and not classification.correspondent:
+        logger.warning("Document #%d: classification returned empty results, skipping", doc.id)
+        stats.failed += 1
+        return
+
     if settings.dry_run:
         _log_dry_run(doc, classification, settings)
         stats.processed += 1

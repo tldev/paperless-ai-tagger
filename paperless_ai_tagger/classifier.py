@@ -73,6 +73,10 @@ class Classifier:
         except subprocess.TimeoutExpired:
             raise ClassificationError("claude CLI timed out after 120 seconds")
 
+        logger.debug("Claude CLI stdout: %s", result.stdout[:2000])
+        if result.stderr:
+            logger.debug("Claude CLI stderr: %s", result.stderr[:1000])
+
         if result.returncode != 0:
             raise ClassificationError(
                 f"claude CLI exited with code {result.returncode}: {result.stderr.strip()}"
@@ -88,6 +92,7 @@ class Classifier:
         # The --output-format json wraps the result in an envelope.
         # The actual classification is in the "result" field.
         raw = envelope.get("result", result.stdout)
+        logger.debug("Raw classification result: %s", raw[:2000] if isinstance(raw, str) else raw)
         if isinstance(raw, str):
             data = _parse_json_response(raw)
         else:
