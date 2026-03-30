@@ -14,7 +14,7 @@ RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml README.md .
 COPY paperless_ai_tagger/ paperless_ai_tagger/
 
 RUN pip install --no-cache-dir .
